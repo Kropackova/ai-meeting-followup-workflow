@@ -1,0 +1,99 @@
+{
+  "name": "AI Meeting Follow-up - 13 Review Detail API",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "meeting-followup/review-item",
+        "responseMode": "lastNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "6df33f72-3241-4b98-a17f-65289bd54f3a",
+      "name": "Review Detail API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        288
+      ],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "",
+          "cachedResultUrl": ""
+        }
+      },
+      "id": "8388eccb-9e2f-486d-877d-6bc2a84d5a0b",
+      "name": "Google Sheets Get Review Detail - Configure Credential",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "notesInFlow": true,
+      "position": [
+        288,
+        288
+      ],
+      "notes": "Bind your Google Sheets credential and replace GOOGLE_SHEET_ID_PLACEHOLDER."
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $('Review Detail API').first().json;\nconst runId = String(request.params?.run_id || request.query?.run_id || '').trim();\nconst rows = $input.all().map(item => item.json);\nconst row = rows.find(item => String(item.run_id || '').trim() === runId);\n\nif (!runId) {\n  return [{ json: { ok: false, error: 'Missing run_id.' } }];\n}\n\nif (!row) {\n  return [{ json: { ok: false, error: 'Review item not found.' } }];\n}\n\nconst parseJson = (value, fallback) => {\n  try {\n    return JSON.parse(value || fallback);\n  } catch {\n    return JSON.parse(fallback);\n  }\n};\n\nconst summaryLines = String(row.summary || '')\n  .split('\\n')\n  .map(s => s.trim())\n  .filter(Boolean);\n\nreturn [{\n  json: {\n    ok: true,\n    item: {\n      run_id: row.run_id || '',\n      submitted_at: row.submitted_at || '',\n      department: row.department || '',\n      meeting_title: row.meeting_title || '',\n      meeting_type: row.meeting_type || '',\n      language_hint: row.language_hint || '',\n      source_mode: row.source_mode || '',\n      status: row.status || '',\n      reviewer_name: row.reviewer_name || '',\n      reviewer_notes: row.reviewer_notes || '',\n      summary: row.summary || '',\n      summary_lines: summaryLines,\n      action_items: parseJson(row.action_items_json, '[]'),\n      key_decisions: parseJson(row.key_decisions_json, '[]'),\n      risks_open_questions: parseJson(row.risks_open_questions_json, '[]'),\n      employee_faq: parseJson(row.employee_faq_json, '[]'),\n      ai_opportunities: parseJson(row.ai_opportunities_json, '[]'),\n      ambassador_brief: parseJson(row.ambassador_brief_json, '{}'),\n      final_markdown_draft: row.final_markdown_draft || '',\n      final_markdown_edited: row.final_markdown_edited || '',\n      final_markdown_approved: row.final_markdown_approved || '',\n      notify_channel: row.notify_channel || 'none',\n      error_message: row.error_message || '',\n    }\n  }\n}];"
+      },
+      "id": "f1c0731a-0d46-4994-9439-bfc63f417fa5",
+      "name": "Format Review Detail Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        560,
+        288
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Review Detail API": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Get Review Detail - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Get Review Detail - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Format Review Detail Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "56b8ca18-3f3f-41a8-b69e-e7db511a0af8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "524ba018723ad5a0aecb73c8b6c971d2ca72ca1a97b2eccfb28bc8983a5b5295"
+  },
+  "tags": []
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/ai-meeting-followup-workflow/followup-output.schema.json",
+  "title": "AI Meeting Follow-up Structured Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "action_items",
+    "key_decisions",
+    "risks_open_questions",
+    "employee_faq",
+    "ai_adoption_opportunities",
+    "ai_ambassador_brief"
+  ],
+  "properties": {
+    "summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task", "owner", "deadline", "notes"],
+        "properties": {
+          "task": { "type": "string" },
+          "owner": { "type": ["string", "null"] },
+          "deadline": { "type": ["string", "null"] },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "key_decisions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "risks_open_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "employee_faq": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "answer"],
+        "properties": {
+          "question": { "type": "string" },
+          "answer": { "type": "string" }
+        }
+      }
+    },
+    "ai_adoption_opportunities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "impact", "effort", "notes"],
+        "properties": {
+          "title": { "type": "string" },
+          "impact": { "type": "string" },
+          "effort": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "ai_ambassador_brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headline", "talking_points", "suggested_internal_message"],
+      "properties": {
+        "headline": { "type": "string" },
+        "talking_points": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_internal_message": { "type": "string" }
+      }
+    }
+  }
+}

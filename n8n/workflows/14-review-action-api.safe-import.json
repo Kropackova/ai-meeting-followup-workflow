@@ -1,0 +1,1117 @@
+{
+  "name": "AI Meeting Follow-up - 14 Review Action API",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst run_id = String(item.run_id || '').trim();\nconst decision = String(item.decision || '').trim();\nconst allowed = ['approve', 'approve_with_sheet_edits', 'reject'];\nconst approval_request_ok = Boolean(run_id && allowed.includes(decision));\nreturn [{ json: { ...item, run_id, decision, reviewer_notes: String(item.reviewer_notes || '').trim(), approval_request_ok, request_error: approval_request_ok ? '' : 'Missing run_id or invalid decision.' } }];"
+      },
+      "id": "ef37d58b-2054-443b-be9d-10e0f44dff8d",
+      "name": "Validate Approval Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "eed564e8-c6b5-456f-94d6-50ed4c3b15e1",
+              "leftValue": "={{ $json.approval_request_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ee7e5690-5f7f-4569-9bb6-06e52efa1b83",
+      "name": "IF Approval Request OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{ json: { approval_ok: false, updated: false, notified: false, error_message: item.request_error || 'Approval request rejected before Sheet lookup.' } }];"
+      },
+      "id": "90f23380-243a-4b1f-bdbe-e67c75a9c704",
+      "name": "Stop - Invalid Approval Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1728,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "",
+          "cachedResultUrl": ""
+        }
+      },
+      "id": "084ffa74-81fb-4b69-ba12-50911e6fda3b",
+      "name": "Google Sheets Lookup Draft Row - Configure Credential",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1712,
+        480
+      ],
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "notes": "Bind your Google Sheets credential. For local/private n8n, Google Service Account is the practical default. Configure lookup to return every row matching run_id if your n8n version offers that option, then guard against duplicates."
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $('Validate Approval Request').first().json;\nconst rows = $input.all().map((item) => item.json).filter((row) => String(row.run_id || '').trim() === request.run_id);\nlet guard_error = '';\nlet row = rows[0] || {};\n\nif (rows.length !== 1) {\n  guard_error = rows.length === 0 ? 'No row found for run_id.' : 'Duplicate run_id rows found; stop without update.';\n} else if (row.status !== 'draft') {\n  guard_error = `Row status must be draft, got ${row.status || 'blank'}.`;\n}\n\nconst requestedEdited = String(request.final_markdown_edited || '').trim();\nconst effectiveEdited = requestedEdited || String(row.final_markdown_edited || '').trim();\n\nif (!guard_error && request.decision === 'approve_with_sheet_edits' && !effectiveEdited) {\n  guard_error = 'approve_with_sheet_edits requires final_markdown_edited.';\n}\n\nreturn [{ json: { ...row, ...request, final_markdown_edited: effectiveEdited, approval_ok: !guard_error, guard_error } }];"
+      },
+      "id": "356b83ce-2921-43ea-8fb9-9d8408255c47",
+      "name": "Guard Draft Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e52665c1-f223-4eec-98c5-afaf8caf0d51",
+              "leftValue": "={{ $json.approval_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "db8b7df0-63da-4476-96ae-1a74d45afc07",
+      "name": "IF Draft Row OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1376,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{ json: { approval_ok: false, updated: false, notified: false, run_id: item.run_id || '', error_message: item.guard_error || 'Approval guard failed.' } }];"
+      },
+      "id": "634b77e2-65d2-4603-a458-07dd4d39698a",
+      "name": "Stop - Approval Guard Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet status = item.status;\nlet final_markdown_approved = item.final_markdown_approved || '';\nlet notify_allowed = false;\nif (item.decision === 'reject') { status = 'rejected'; final_markdown_approved = ''; }\nif (item.decision === 'approve') { status = 'approved'; final_markdown_approved = item.final_markdown_draft || ''; notify_allowed = true; }\nif (item.decision === 'approve_with_sheet_edits') { status = 'approved_edited'; final_markdown_approved = item.final_markdown_edited || ''; notify_allowed = true; }\nif (String(item.notify_channel || 'none') === 'none') { notify_allowed = false; }\nreturn [{ json: { ...item, status, reviewer_notes: item.reviewer_notes || '', final_markdown_approved, notify_allowed, error_message: '' } }];"
+      },
+      "id": "2f177713-b5c8-4307-b2db-70ce461d96c0",
+      "name": "Apply Approval Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "followup_runs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "run_id": "={{ $('Apply Approval Decision').first().json.run_id }}",
+            "status": "={{ $('Apply Approval Decision').first().json.status }}",
+            "reviewer_notes": "={{ $('Apply Approval Decision').first().json.reviewer_notes }}",
+            "final_markdown_approved": "={{ $('Apply Approval Decision').first().json.final_markdown_approved }}",
+            "error_message": "={{ $('Apply Approval Decision').first().json.error_message }}",
+            "final_markdown_edited": "={{ $('Apply Approval Decision').first().json.final_markdown_edited }}",
+            "row_number": 0
+          },
+          "matchingColumns": [
+            "run_id"
+          ],
+          "schema": [
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "meeting_title",
+              "displayName": "meeting_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "meeting_type",
+              "displayName": "meeting_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source_mode",
+              "displayName": "source_mode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewer_name",
+              "displayName": "reviewer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewer_notes",
+              "displayName": "reviewer_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "prompt_version_followup",
+              "displayName": "prompt_version_followup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "raw_transcript",
+              "displayName": "raw_transcript",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action_items_json",
+              "displayName": "action_items_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "key_decisions_json",
+              "displayName": "key_decisions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "risks_open_questions_json",
+              "displayName": "risks_open_questions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "employee_faq_json",
+              "displayName": "employee_faq_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ai_opportunities_json",
+              "displayName": "ai_opportunities_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ambassador_brief_json",
+              "displayName": "ambassador_brief_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "final_markdown_draft",
+              "displayName": "final_markdown_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "final_markdown_edited",
+              "displayName": "final_markdown_edited",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_markdown_approved",
+              "displayName": "final_markdown_approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notify_channel",
+              "displayName": "notify_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e3189576-82a2-48b8-9cc2-95071b8ea1dc",
+      "name": "Google Sheets Update Approval - Configure Credential",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        96,
+        352
+      ],
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "notes": "Bind your Google Sheets credential and confirm run_id is the matching column."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a73a0961-9533-48cd-af98-cfbb4c7e2e84",
+              "leftValue": "={{ $('Apply Approval Decision').first().json.notify_allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b3133193-de61-438b-8196-a8f4a497e8c3",
+      "name": "IF Notification Allowed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1040,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-followup/review-action",
+        "responseMode": "lastNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "38997f9a-88b6-4b5c-b380-49d9391d8d02",
+      "name": "Review Action API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -2464,
+        560
+      ],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nreturn [{\n  json: {\n    run_id: String(source.run_id || '').trim(),\n    decision: String(source.decision || '').trim(),\n    reviewer_notes: String(source.reviewer_notes || '').trim(),\n    final_markdown_edited: String(source.final_markdown_edited || ''),\n  }\n}];"
+      },
+      "id": "7096acb3-b31f-4acb-8d7c-fbcda28c4e75",
+      "name": "Normalize Review Action Request",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -2288,
+        560
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "let base = {};\ntry { base = $('Apply Approval Decision').first().json; } catch {}\n\nlet telegram_result = null;\ntry { telegram_result = $('Send Telegram Message - Configure Credential').first().json.result || null; } catch {}\n\nreturn [{\n  json: {\n    ok: true,\n    run_id: base.run_id || '',\n    status: base.status || '',\n    reviewer_notes: base.reviewer_notes || '',\n    notified: Boolean(base.notify_allowed),\n    telegram_result,\n    message: base.notify_allowed\n      ? 'Review action completed. Telegram sent and approval stored.'\n      : 'Review action completed. Notification skipped.'\n  }\n}];"
+      },
+      "id": "b7371bf0-f26e-4b67-ac3c-ba2d0e12ee46",
+      "name": "Build Review Action Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        304,
+        512
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst approvedText = String(item.final_markdown_approved || '').trim();\nconst meetingTitle = String(item.meeting_title || 'Approved follow-up').trim();\nconst reviewerName = String(item.reviewer_name || 'Reviewer').trim();\nconst languageHint = String(item.language_hint || item.meeting_json?.language_hint || '').trim();\n\nconst czechSignalText = `${languageHint} ${meetingTitle} ${reviewerName} ${approvedText.slice(0, 1600)}`;\nconst hasCzechDiacritics = /[\\u011b\\u0161\\u010d\\u0159\\u017e\\u00fd\\u00e1\\u00ed\\u00e9\\u00fa\\u016f\\u010f\\u0165\\u0148\\u00f3\\u011a\\u0160\\u010c\\u0158\\u017d\\u00dd\\u00c1\\u00cd\\u00c9\\u00da\\u016e\\u010e\\u0164\\u0147\\u00d3]/.test(czechSignalText);\nconst hasCzechSections = /(^|\\n)#{0,2}\\s*(Shrnuti|Hlavni ukoly|Klicova rozhodnuti|Rizika a otevrene otazky|FAQ)\\b/i.test(czechSignalText.normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''));\nconst isCzech = /czech|čeština|cestina|cz|cs/i.test(languageHint) || hasCzechDiacritics || hasCzechSections;\n\nconst prompt = isCzech\n  ? `Převeď schválený follow-up do krátké Telegram zprávy.\n\nVrať validní JSON pouze v tomto tvaru:\n{\"message\":\"...\"}\n\nPoužij přesně tuto strukturu zprávy:\n\n${meetingTitle} - SCHVÁLENO\n\nShrnutí:\n- ...\n- ...\n- ...\n\nÚkoly:\n1. Vlastník: úkol\n2. Vlastník: úkol\n3. Vlastník: úkol\n\nOtevřené otázky:\n- ...\n- ...\n\nSchválil/a: ${reviewerName}\n\nPravidla:\n- Nepoužívej emoji.\n- Nepoužívej markdown tabulky.\n- Nepoužívej HTML.\n- Nepřidávej hashtagy.\n- Nepřidávej úvod ani závěr mimo šablonu.\n- Maximálně 3 body ve Shrnutí.\n- Maximálně 5 úkolů.\n- Maximálně 3 otevřené otázky.\n- Nevymýšlej vlastníky, termíny, rozhodnutí ani rizika.\n- Pokud vlastník není jasný, napiš \"Vlastník nejasný\".\n- Pokud nejsou jasné úkoly, napiš \"Žádné jasné úkoly.\"\n- Pokud nejsou otevřené otázky, napiš \"Žádné otevřené otázky.\"\n- Celá zpráva musí být pod 1800 znaků.\n- Piš česky.\n- Nepřekládej obsah do angličtiny.\n\nSchválený follow-up text:\n${approvedText}`\n  : `Convert the approved follow-up into a short Telegram message.\n\nReturn valid JSON only in this shape:\n{\"message\":\"...\"}\n\nUse exactly this message structure:\n\n${meetingTitle} - APPROVED\n\nSummary:\n- ...\n- ...\n- ...\n\nActions:\n1. Owner: action\n2. Owner: action\n3. Owner: action\n\nOpen questions:\n- ...\n- ...\n\nReviewed by: ${reviewerName}\n\nRules:\n- No emojis.\n- No markdown tables.\n- No HTML.\n- No hashtags.\n- No intro or outro outside the template.\n- Maximum 3 Summary bullets.\n- Maximum 5 Actions.\n- Maximum 3 Open questions.\n- Do not invent owners, deadlines, decisions, or risks.\n- If owner is unclear, write \"Owner unclear\".\n- If there are no clear actions, write \"No clear action items.\"\n- If there are no open questions, write \"No open questions captured.\"\n- Keep the whole message under 1800 characters.\n- Write in English.\n- If the approved follow-up text is clearly Czech, use the Czech template instead.\n\nApproved follow-up text:\n${approvedText}`;\n\nreturn [{\n  json: {\n    ...item,\n    language_hint: languageHint,\n    telegram_summary_language: isCzech ? 'cs' : 'en',\n    telegram_summary_prompt: prompt,\n    telegram_minimax_body: {\n      model: 'MiniMax-M2.7',\n      messages: [\n        {\n          role: 'system',\n          content: 'Return valid JSON only. Follow the requested template exactly. Do not invent facts.'\n        },\n        {\n          role: 'user',\n          content: prompt\n        }\n      ],\n      temperature: 0.2\n    }\n  }\n}];\n"
+      },
+      "id": "29f54472-c2a5-49da-9df7-77dc94e18264",
+      "name": "Build Telegram Summary Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        352
+      ],
+      "notesInFlow": true,
+      "notes": "Formats a short Telegram-friendly message. Bind the Telegram node after import."
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Build Telegram Summary Prompt').first().json;\n\nconst raw =\n  response.choices?.[0]?.message?.content ??\n  response.body?.choices?.[0]?.message?.content ??\n  response.data?.choices?.[0]?.message?.content ??\n  '';\n\nconst isCzech = String(meta.telegram_summary_language || '').toLowerCase() === 'cs';\n\nconst fallbackMessage = isCzech\n  ? `Schválený follow-up je připraven\\n\\nSetkání: ${meta.meeting_title || ''}\\nStatus: ${meta.status || ''}\\nSchvalovatel: ${meta.reviewer_name || ''}`\n  : `Approved follow-up ready\\n\\nMeeting: ${meta.meeting_title || ''}\\nStatus: ${meta.status || ''}\\nReviewer: ${meta.reviewer_name || ''}`;\n\nif (!raw || typeof raw !== 'string') {\n  return [{\n    json: {\n      ...meta,\n      message: fallbackMessage\n    }\n  }];\n}\n\nlet cleaned = raw\n  .replace(/<think>[\\s\\S]*?<\\/think>\\s*/g, '')\n  .replace(/```json/gi, '')\n  .replace(/```/g, '')\n  .trim();\n\nconst firstBrace = cleaned.indexOf('{');\nconst lastBrace = cleaned.lastIndexOf('}');\nif (firstBrace >= 0 && lastBrace > firstBrace) {\n  cleaned = cleaned.slice(firstBrace, lastBrace + 1);\n}\n\ntry {\n  const parsed = JSON.parse(cleaned);\n  const message = String(parsed.message || '').trim();\n\n  return [{\n    json: {\n      ...meta,\n      message: message || fallbackMessage\n    }\n  }];\n} catch {\n  return [{\n    json: {\n      ...meta,\n      message: fallbackMessage\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        352
+      ],
+      "id": "a17f06f9-7030-4618-84f2-554f1aa56c7c",
+      "name": "Parse Telegram Summary JSON"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "followup_runs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "run_id": "={{ $json.run_id }}",
+            "status": "={{ $json.status }}",
+            "reviewer_notes": "={{ $json.reviewer_notes }}",
+            "final_markdown_approved": "={{ $json.final_markdown_approved }}",
+            "error_message": "={{ $json.error_message }}",
+            "final_markdown_edited": "={{ $json.final_markdown_edited }}",
+            "row_number": 0
+          },
+          "matchingColumns": [
+            "run_id"
+          ],
+          "schema": [
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "meeting_title",
+              "displayName": "meeting_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "meeting_type",
+              "displayName": "meeting_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source_mode",
+              "displayName": "source_mode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewer_name",
+              "displayName": "reviewer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewer_notes",
+              "displayName": "reviewer_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "prompt_version_followup",
+              "displayName": "prompt_version_followup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "raw_transcript",
+              "displayName": "raw_transcript",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action_items_json",
+              "displayName": "action_items_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "key_decisions_json",
+              "displayName": "key_decisions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "risks_open_questions_json",
+              "displayName": "risks_open_questions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "employee_faq_json",
+              "displayName": "employee_faq_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ai_opportunities_json",
+              "displayName": "ai_opportunities_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ambassador_brief_json",
+              "displayName": "ambassador_brief_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "final_markdown_draft",
+              "displayName": "final_markdown_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "final_markdown_edited",
+              "displayName": "final_markdown_edited",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_markdown_approved",
+              "displayName": "final_markdown_approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notify_channel",
+              "displayName": "notify_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f2b4a913-c713-4925-a8cf-07870d99e292",
+      "name": "Google Sheets Update Approval - Configure Credential1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -864,
+        560
+      ],
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "notes": "Bind your Google Sheets credential and confirm run_id is the matching column."
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst message = String(item.message || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nreturn [{\n  json: {\n    ...item,\n    message\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        352
+      ],
+      "id": "0788827f-b718-4153-b291-a2ec2406fb3e",
+      "name": "Sanitize Telegram Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.minimax.io/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <LLM_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.telegram_minimax_body}}",
+        "options": {
+          "timeout": 500000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -624,
+        352
+      ],
+      "id": "61394c89-9621-4aca-919c-cea10ed63465",
+      "name": "LLM Telegram Summary HTTP - Configure API Key"
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "7cf18857-3592-4635-87d1-fec52427788b",
+      "name": "Send Telegram Message - Configure Credential",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        -112,
+        352
+      ],
+      "typeVersion": 1.2,
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Review Action API": {
+      "main": [
+        [
+          {
+            "node": "Normalize Review Action Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Approval Request": {
+      "main": [
+        [
+          {
+            "node": "IF Approval Request OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Approval Request OK": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Lookup Draft Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop - Invalid Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Lookup Draft Row - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Guard Draft Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Draft Row": {
+      "main": [
+        [
+          {
+            "node": "IF Draft Row OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Draft Row OK": {
+      "main": [
+        [
+          {
+            "node": "Apply Approval Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop - Approval Guard Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Approval Decision": {
+      "main": [
+        [
+          {
+            "node": "IF Notification Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Update Approval - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Build Review Action Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Notification Allowed": {
+      "main": [
+        [
+          {
+            "node": "Build Telegram Summary Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Sheets Update Approval - Configure Credential1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Review Action Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Telegram Summary Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Telegram Summary HTTP - Configure API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Telegram Summary JSON": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Update Approval - Configure Credential1": {
+      "main": [
+        [
+          {
+            "node": "Build Review Action Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Telegram Summary HTTP - Configure API Key": {
+      "main": [
+        [
+          {
+            "node": "Parse Telegram Summary JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Update Approval - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0bb47a12-10d8-424c-8030-eb3b3b081341",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "524ba018723ad5a0aecb73c8b6c971d2ca72ca1a97b2eccfb28bc8983a5b5295"
+  },
+  "tags": []
+}

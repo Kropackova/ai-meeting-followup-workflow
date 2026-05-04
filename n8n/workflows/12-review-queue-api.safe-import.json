@@ -1,0 +1,99 @@
+{
+  "name": "AI Meeting Follow-up - 12 Review Queue API",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "meeting-followup/review-items",
+        "responseMode": "lastNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "467305ff-6d37-454d-9bb2-be81dc236e07",
+      "name": "Review Queue API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        304
+      ],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "",
+          "cachedResultUrl": ""
+        }
+      },
+      "id": "316bf27e-326b-4a36-9447-bf27691f3f26",
+      "name": "Google Sheets Get Review Items - Configure Credential",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "notesInFlow": true,
+      "position": [
+        288,
+        304
+      ],
+      "notes": "Bind your Google Sheets credential and replace GOOGLE_SHEET_ID_PLACEHOLDER."
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $('Review Queue API').first().json.query || {};\nconst allowed = ['draft', 'approved', 'approved_edited', 'rejected'];\nconst filterStatus = String(query.status || '').trim();\nconst rows = $input.all().map(item => item.json);\nconst filtered = rows\n  .filter(row => allowed.includes(String(row.status || '')))\n  .filter(row => !filterStatus || String(row.status || '') === filterStatus)\n  .sort((a, b) => String(b.submitted_at || '').localeCompare(String(a.submitted_at || '')))\n  .map(row => ({\n    run_id: row.run_id || '',\n    submitted_at: row.submitted_at || '',\n    meeting_title: row.meeting_title || '',\n    department: row.department || '',\n    meeting_type: row.meeting_type || '',\n    status: row.status || '',\n    reviewer_name: row.reviewer_name || '',\n    reviewer_notes: row.reviewer_notes || '',\n    has_edited_markdown: Boolean(String(row.final_markdown_edited || '').trim()),\n  }));\nreturn [{ json: { ok: true, items: filtered } }];"
+      },
+      "id": "76490206-2085-47ed-aafe-2de663eb4d37",
+      "name": "Format Review Queue Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        560,
+        304
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Sheets Get Review Items - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Format Review Queue Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Queue API": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Get Review Items - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ec8476d2-6072-4d82-b15f-f90ea34ee599",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "524ba018723ad5a0aecb73c8b6c971d2ca72ca1a97b2eccfb28bc8983a5b5295"
+  },
+  "tags": []
+}

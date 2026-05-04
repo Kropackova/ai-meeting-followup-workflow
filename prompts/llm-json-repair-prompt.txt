@@ -1,0 +1,19 @@
+Repair this model output into valid JSON matching the required follow-up schema. Do not add new facts. Do not rewrite the content unless needed for valid JSON. Return JSON only.
+
+Required JSON types:
+- summary, key_decisions, and risks_open_questions are arrays of strings
+- action_items, employee_faq, and ai_adoption_opportunities are arrays of objects
+- ai_ambassador_brief is an object
+
+For action_items, each item must use exactly this shape:
+{
+  "task": "...",
+  "owner": null or string,
+  "deadline": null or string,
+  "notes": ""
+}
+
+Keep JSON property names in English even when text values are Czech.
+
+Raw output:
+{{raw_model_output}}

@@ -1,0 +1,879 @@
+{
+  "name": "AI Meeting Follow-up - 11 Create Draft API",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst compactTime = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);\nreturn [{ json: { ...input, run_id: `mf_${compactTime}_${Math.random().toString(36).slice(2, 8)}`, submitted_at: new Date().toISOString(), source_mode: 'manual_transcript', status: 'received', prompt_version_followup: 'followup_v1.0.0', error_message: '' } }];"
+      },
+      "id": "bba9c429-df50-4f32-b54e-362b8bf05833",
+      "name": "Prepare Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4144,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst transcript = String(item.manual_transcript || '').trim();\nconst rawDemo = item.demo_data_confirmed;\nconst demoString = Array.isArray(rawDemo) ? rawDemo.join(' ').toLowerCase() : String(rawDemo ?? '').toLowerCase().trim();\nconst demo = rawDemo === true || rawDemo === 1 || ['true', 'on', 'yes', 'checked', '1', 'demo_data_confirmed'].includes(demoString) || (Array.isArray(rawDemo) && rawDemo.length > 0);\nconst required = {\n  meeting_title: String(item.meeting_title || '').trim(),\n  department: String(item.department || '').trim(),\n  meeting_type: String(item.meeting_type || '').trim(),\n  reviewer_name: String(item.reviewer_name || '').trim(),\n};\nconst missingFields = Object.entries(required)\n  .filter(([, value]) => !value)\n  .map(([key]) => key);\nconst input_ok = Boolean(demo && transcript && missingFields.length === 0);\nconst errorBits = [];\nif (!demo) errorBits.push('Demo data not confirmed.');\nif (!transcript) errorBits.push('Transcript is empty.');\nif (missingFields.length) errorBits.push(`Missing required fields: ${missingFields.join(', ')}.`);\nreturn [{ json: {\n  ...item,\n  manual_transcript: transcript,\n  meeting_title: required.meeting_title,\n  department: required.department,\n  meeting_type: required.meeting_type,\n  reviewer_name: required.reviewer_name,\n  demo_data_confirmed_raw: rawDemo,\n  input_ok,\n  status: input_ok ? 'received' : 'rejected_input',\n  error_message: input_ok ? '' : errorBits.join(' '),\n} }];"
+      },
+      "id": "49a68f37-a866-4881-8c4b-fe4463675fb9",
+      "name": "Validate Demo Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4336,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e8b645bb-2645-4dd7-af48-725346455e9f",
+              "leftValue": "={{ $json.input_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b45968a5-47f5-4466-a5e2-12fbd350fb45",
+      "name": "IF Input OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4528,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{ json: { run_id: item.run_id, submitted_at: item.submitted_at, department: item.department || '', meeting_title: item.meeting_title || '', meeting_type: item.meeting_type || '', language_hint: item.language_hint || '', source_mode: item.source_mode, status: 'rejected_input', reviewer_name: item.reviewer_name || '', reviewer_notes: '', prompt_version_followup: item.prompt_version_followup, raw_transcript: item.manual_transcript || '', summary: '', action_items_json: '[]', key_decisions_json: '[]', risks_open_questions_json: '[]', employee_faq_json: '[]', ai_opportunities_json: '[]', ambassador_brief_json: '{}', final_markdown_draft: '', final_markdown_edited: '', final_markdown_approved: '', notify_channel: item.notify_channel || 'none', error_message: item.error_message } }];"
+      },
+      "id": "9433060c-2b56-4a49-a41e-e6356c319057",
+      "name": "Prepare Rejected Input Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4736,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst meeting = { meeting_title: item.meeting_title, department: item.department, meeting_type: item.meeting_type, language_hint: item.language_hint || null, audience: item.audience || null, notify_channel: item.notify_channel || 'none', reviewer_name: item.reviewer_name };\nconst prompt = `You are creating an internal follow-up package from a fake/demo meeting or training transcript.\n\nReturn valid JSON only. Preserve exact meeting metadata. Do not rename the meeting title. Do not invent owners, deadlines, or decisions. If an owner or deadline is not present, use null. Focus on AI adoption value, operational clarity, employee enablement, and follow-up ownership.\n\nUse the exact meeting metadata provided below. Do not rename or paraphrase the meeting title. Do not rewrite department, meeting type, audience, or notify channel values.\n\nThe output must be in the transcript/main language, so Czech transcript -> Czech structured output + Czech delivery draft.\n\nRequired sections:\nsummary, action_items, key_decisions, risks_open_questions, employee_faq, ai_adoption_opportunities, ai_ambassador_brief.\n\nReturn exactly these JSON types: summary, key_decisions, and risks_open_questions are arrays of strings; action_items, employee_faq, and ai_adoption_opportunities are arrays of objects; ai_ambassador_brief is an object.\n\nWrite in the transcript main language.\n\nReturn Czech text values if the transcript is in Czech, but keep JSON property names exactly in English.\n\nFor action_items, each item must use exactly this shape:\n{\n  \"task\": \"...\",\n  \"owner\": null or string,\n  \"deadline\": null or string,\n  \"notes\": \"\"\n}\n\nDo not use \"action\", \"ukol\", \"název\", or any other key instead of \"task\".\n\nMeeting metadata (must stay exact):\n${JSON.stringify(meeting, null, 2)}\n\nTranscript:\n${item.manual_transcript}`;\nreturn [{ json: { ...item, meeting_json: meeting, rendered_followup_prompt: prompt, minimax_body: { model: 'MiniMax-M2.7', messages: [{ role: 'system', content: 'Return valid JSON only. Preserve exact meeting metadata. Do not rename the meeting title.' }, { role: 'user', content: prompt }], temperature: 0.4 } } }];"
+      },
+      "id": "4601c975-36cb-413f-a882-5b6eedb56fd9",
+      "name": "Render Follow-up Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4736,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Render Follow-up Prompt').first().json;\n\nconst raw =\n  response?.choices?.[0]?.message?.content ??\n  response?.body?.choices?.[0]?.message?.content ??\n  response?.data?.choices?.[0]?.message?.content ??\n  '';\n\nif (!raw || typeof raw !== 'string') {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw || '',\n      parse_error: 'MiniMax response missing message content'\n    }\n  }];\n}\n\nfunction stripWrappers(text) {\n  return String(text || '')\n    .replace(/<think>[\\s\\S]*?<\\/think>\\s*/g, '')\n    .replace(/```(?:json)?/gi, '')\n    .replace(/```/g, '')\n    .trim();\n}\n\nfunction extractOuterJsonObject(text) {\n  const start = text.indexOf('{');\n  if (start === -1) return '';\n\n  let inString = false;\n  let escape = false;\n  let depth = 0;\n\n  for (let i = start; i < text.length; i += 1) {\n    const ch = text[i];\n\n    if (inString) {\n      if (escape) {\n        escape = false;\n      } else if (ch === '\\\\') {\n        escape = true;\n      } else if (ch === '\"') {\n        inString = false;\n      }\n      continue;\n    }\n\n    if (ch === '\"') {\n      inString = true;\n      continue;\n    }\n\n    if (ch === '{') depth += 1;\n    if (ch === '}') {\n      depth -= 1;\n      if (depth === 0) {\n        return text.slice(start, i + 1);\n      }\n    }\n  }\n\n  return '';\n}\n\nfunction sanitizeJsonLike(text) {\n  return text\n    .replace(/^\\uFEFF/, '')\n    .replace(/[“”]/g, '\"')\n    .replace(/[‘’]/g, \"'\")\n    .replace(/,\\s*([}\\]])/g, '$1')\n    .trim();\n}\n\nfunction safeString(value, fallback = '') {\n  if (value == null) return fallback;\n  if (typeof value === 'string') return value.trim() || fallback;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  return fallback;\n}\n\nfunction asStringArray(value) {\n  if (Array.isArray(value)) {\n    return value\n      .map((item) => {\n        if (typeof item === 'string') return item.trim();\n        if (item == null) return '';\n        if (typeof item === 'object') {\n          return safeString(\n            item.text ||\n            item.value ||\n            item.label ||\n            item.title ||\n            item.name ||\n            item.question ||\n            item.decision ||\n            item.risk ||\n            item.note,\n            ''\n          );\n        }\n        return String(item).trim();\n      })\n      .filter(Boolean);\n  }\n\n  if (typeof value === 'string') {\n    return value.trim() ? [value.trim()] : [];\n  }\n\n  if (value && typeof value === 'object') {\n    const extracted = safeString(\n      value.text ||\n      value.value ||\n      value.label ||\n      value.title ||\n      value.name ||\n      value.question ||\n      value.decision ||\n      value.risk ||\n      value.note,\n      ''\n    );\n    return extracted ? [extracted] : [];\n  }\n\n  return value == null ? [] : [String(value)];\n}\n\nfunction normalizeFaqItems(value) {\n  const items = Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];\n\n  return items.map((item) => {\n    if (!item || typeof item !== 'object') {\n      return {\n        question: 'Untitled question',\n        answer: ''\n      };\n    }\n\n    return {\n      question: safeString(item.question || item.q || item.title, 'Untitled question'),\n      answer: safeString(item.answer || item.a || item.response, '')\n    };\n  });\n}\n\nfunction normalizeActionItems(value) {\n  const items =\n    Array.isArray(value) ? value :\n    typeof value === 'string' ? [value] :\n    value && typeof value === 'object' ? [value] :\n    [];\n\n  return items.map((item) => {\n    if (typeof item === 'string') {\n      return {\n        task: item.trim() || 'not specified',\n        owner: null,\n        deadline: null,\n        notes: ''\n      };\n    }\n\n    if (!item || typeof item !== 'object') {\n      return {\n        task: 'not specified',\n        owner: null,\n        deadline: null,\n        notes: ''\n      };\n    }\n\n    return {\n      task: safeString(\n        item.task ||\n        item.action ||\n        item.title ||\n        item.name ||\n        item.label ||\n        item.description ||\n        item.notes,\n        'not specified'\n      ),\n      owner: safeString(item.owner, '') || null,\n      deadline: safeString(item.deadline, '') || null,\n      notes: safeString(item.notes || item.note || item.details || item.context, '')\n    };\n  });\n}\n\nfunction normalizeOpportunityItems(value) {\n  const items = Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];\n\n  return items.map((item) => {\n    if (!item || typeof item !== 'object') {\n      return {\n        title: 'Untitled opportunity',\n        impact: '',\n        effort: '',\n        notes: ''\n      };\n    }\n\n    return {\n      title: safeString(item.title || item.opportunity || item.name, 'Untitled opportunity'),\n      impact: safeString(item.impact),\n      effort: safeString(item.effort),\n      notes: safeString(item.notes || item.note || item.rationale)\n    };\n  });\n}\n\nlet cleaned = stripWrappers(raw);\ncleaned = extractOuterJsonObject(cleaned) || cleaned;\ncleaned = sanitizeJsonLike(cleaned);\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw,\n      cleaned_model_output: cleaned,\n      parse_error: error.message\n    }\n  }];\n}\n\nif (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw,\n      cleaned_model_output: cleaned,\n      parse_error: 'Parsed output must be an object.'\n    }\n  }];\n}\n\nparsed.summary = asStringArray(parsed.summary);\nparsed.key_decisions = asStringArray(parsed.key_decisions);\nparsed.risks_open_questions = asStringArray(parsed.risks_open_questions);\nparsed.action_items = normalizeActionItems(parsed.action_items);\nparsed.employee_faq = normalizeFaqItems(parsed.employee_faq);\nparsed.ai_adoption_opportunities = normalizeOpportunityItems(parsed.ai_adoption_opportunities);\n\nif (!parsed.ai_ambassador_brief || Array.isArray(parsed.ai_ambassador_brief) || typeof parsed.ai_ambassador_brief !== 'object') {\n  const brief = typeof parsed.ai_ambassador_brief === 'string' ? parsed.ai_ambassador_brief.trim() : '';\n  parsed.ai_ambassador_brief = {\n    headline: brief ? brief.split(/\\r?\\n/)[0].slice(0, 160) : 'AI follow-up brief',\n    talking_points: brief ? [brief] : [],\n    suggested_internal_message: brief\n  };\n} else {\n  parsed.ai_ambassador_brief.headline = safeString(parsed.ai_ambassador_brief.headline, 'AI follow-up brief');\n  parsed.ai_ambassador_brief.talking_points = asStringArray(parsed.ai_ambassador_brief.talking_points);\n  parsed.ai_ambassador_brief.suggested_internal_message = safeString(parsed.ai_ambassador_brief.suggested_internal_message);\n}\n\nreturn [{\n  json: {\n    ...meta,\n    parse_ok: true,\n    followup: parsed,\n    raw_model_output: raw,\n    cleaned_model_output: cleaned,\n    parse_error: ''\n  }\n}];\n"
+      },
+      "id": "81355a99-d16e-47c7-90c7-9920fefa004f",
+      "name": "Parse Follow-up JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9a654b1e-c9e8-41bb-964a-5ad5ac8f3786",
+              "leftValue": "={{ $json.parse_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "326a9067-1482-4d7f-994b-adcc5606b07c",
+      "name": "IF Parse OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5248,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst isCzech = /czech|čeština|cestina|cz/i.test(String(item.language_hint || ''));\n\nconst labels = isCzech\n  ? {\n      department: 'Oddělení',\n      meetingType: 'Typ setkání',\n      audience: 'Cílová skupina',\n      notifyChannel: 'Notifikační kanál',\n      summary: '## Shrnutí',\n      topActions: '## Hlavní úkoly',\n      keyDecisions: '## Klíčová rozhodnutí',\n      risks: '## Rizika a otevřené otázky',\n      faq: '## FAQ',\n      owner: 'Vlastník',\n      deadline: 'Termín',\n      notSpecified: 'neuvedeno',\n      untitledAction: 'Úkol bez názvu',\n      noActions: '- Nebyly identifikovány žádné úkoly.',\n      noDecisions: '- Nebyla identifikována žádná klíčová rozhodnutí.',\n      noRisks: '- Nebyla identifikována žádná rizika ani otevřené otázky.',\n      noFaq: '- Nebyly identifikovány žádné FAQ položky.',\n      question: 'Otázka',\n      answer: 'Odpověď',\n      untitledQuestion: 'Otázka bez názvu',\n      noAnswer: 'Odpověď neuvedena.'\n    }\n  : {\n      department: 'Department',\n      meetingType: 'Meeting type',\n      audience: 'Audience',\n      notifyChannel: 'Notify channel',\n      summary: '## Summary',\n      topActions: '## Top Actions',\n      keyDecisions: '## Key Decisions',\n      risks: '## Risks and Open Questions',\n      faq: '## FAQ',\n      owner: 'Owner',\n      deadline: 'Deadline',\n      notSpecified: 'not specified',\n      untitledAction: 'Untitled action',\n      noActions: '- No action items identified.',\n      noDecisions: '- No key decisions identified.',\n      noRisks: '- No risks or open questions identified.',\n      noFaq: '- No FAQ items identified.',\n      question: 'Q',\n      answer: 'A',\n      untitledQuestion: 'Untitled question',\n      noAnswer: 'No answer provided.'\n    };\n\nconst f = item.followup;\n\nconst summaryLines = Array.isArray(f.summary) ? f.summary.filter(Boolean) : [];\nconst actionItems = Array.isArray(f.action_items) ? f.action_items : [];\nconst keyDecisions = Array.isArray(f.key_decisions) ? f.key_decisions : [];\nconst risks = Array.isArray(f.risks_open_questions) ? f.risks_open_questions : [];\nconst faq = Array.isArray(f.employee_faq) ? f.employee_faq : [];\n\nconst formatAction = (a) => {\n  const task = a?.task || a?.action || labels.untitledAction;\n  const owner = a?.owner ? `${labels.owner}: ${a.owner}` : `${labels.owner}: ${labels.notSpecified}`;\n  const deadline = a?.deadline ? `${labels.deadline}: ${a.deadline}` : `${labels.deadline}: ${labels.notSpecified}`;\n  return `- ${task}\\n  ${owner}\\n  ${deadline}`;\n};\n\nconst deliveryDraft = [\n  `# ${item.meeting_title}`,\n  '',\n  `${labels.department}: ${item.department}`,\n  `${labels.meetingType}: ${item.meeting_type}`,\n  item.audience ? `${labels.audience}: ${item.audience}` : null,\n  item.notify_channel ? `${labels.notifyChannel}: ${item.notify_channel}` : null,\n  '',\n  labels.summary,\n  ...summaryLines.map((line) => `- ${line}`),\n  '',\n  labels.topActions,\n  ...(actionItems.length ? actionItems.map(formatAction) : [labels.noActions]),\n  '',\n  labels.keyDecisions,\n  ...(keyDecisions.length ? keyDecisions.map((line) => `- ${line}`) : [labels.noDecisions]),\n  '',\n  labels.risks,\n  ...(risks.length ? risks.map((line) => `- ${line}`) : [labels.noRisks]),\n  '',\n  labels.faq,\n  ...(faq.length\n    ? faq.map((entry) => `- ${labels.question}: ${entry.question || labels.untitledQuestion}\\n  ${labels.answer}: ${entry.answer || labels.noAnswer}`)\n    : [labels.noFaq]),\n].filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    run_id: item.run_id,\n    submitted_at: item.submitted_at,\n    department: item.department || '',\n    meeting_title: item.meeting_title || '',\n    meeting_type: item.meeting_type || '',\n    language_hint: item.language_hint || '',\n    source_mode: item.source_mode,\n    status: 'draft',\n    reviewer_name: item.reviewer_name || '',\n    reviewer_notes: '',\n    prompt_version_followup: item.prompt_version_followup,\n    raw_transcript: item.manual_transcript || '',\n    summary: summaryLines.join('\\n'),\n    action_items_json: JSON.stringify(actionItems),\n    key_decisions_json: JSON.stringify(keyDecisions),\n    risks_open_questions_json: JSON.stringify(risks),\n    employee_faq_json: JSON.stringify(faq),\n    ai_opportunities_json: JSON.stringify(f.ai_adoption_opportunities || []),\n    ambassador_brief_json: JSON.stringify(f.ai_ambassador_brief || {}),\n    final_markdown_draft: deliveryDraft,\n    final_markdown_edited: '',\n    final_markdown_approved: '',\n    notify_channel: item.notify_channel || 'none',\n    error_message: ''\n  }\n}];\n"
+      },
+      "id": "614f2d11-c2de-4580-8a74-ab59c84e7edd",
+      "name": "Prepare Draft Sheet Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5440,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Render Follow-up Prompt').first().json;\n\nconst raw =\n  response?.choices?.[0]?.message?.content ??\n  response?.body?.choices?.[0]?.message?.content ??\n  response?.data?.choices?.[0]?.message?.content ??\n  '';\n\nif (!raw || typeof raw !== 'string') {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw || '',\n      parse_error: 'MiniMax response missing message content'\n    }\n  }];\n}\n\nfunction stripWrappers(text) {\n  return String(text || '')\n    .replace(/<think>[\\s\\S]*?<\\/think>\\s*/g, '')\n    .replace(/```(?:json)?/gi, '')\n    .replace(/```/g, '')\n    .trim();\n}\n\nfunction extractOuterJsonObject(text) {\n  const start = text.indexOf('{');\n  if (start === -1) return '';\n\n  let inString = false;\n  let escape = false;\n  let depth = 0;\n\n  for (let i = start; i < text.length; i += 1) {\n    const ch = text[i];\n\n    if (inString) {\n      if (escape) {\n        escape = false;\n      } else if (ch === '\\\\') {\n        escape = true;\n      } else if (ch === '\"') {\n        inString = false;\n      }\n      continue;\n    }\n\n    if (ch === '\"') {\n      inString = true;\n      continue;\n    }\n\n    if (ch === '{') depth += 1;\n    if (ch === '}') {\n      depth -= 1;\n      if (depth === 0) {\n        return text.slice(start, i + 1);\n      }\n    }\n  }\n\n  return '';\n}\n\nfunction sanitizeJsonLike(text) {\n  return text\n    .replace(/^\\uFEFF/, '')\n    .replace(/[“”]/g, '\"')\n    .replace(/[‘’]/g, \"'\")\n    .replace(/,\\s*([}\\]])/g, '$1')\n    .trim();\n}\n\nfunction safeString(value, fallback = '') {\n  if (value == null) return fallback;\n  if (typeof value === 'string') return value.trim() || fallback;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  return fallback;\n}\n\nfunction asStringArray(value) {\n  if (Array.isArray(value)) {\n    return value\n      .map((item) => {\n        if (typeof item === 'string') return item.trim();\n        if (item == null) return '';\n        if (typeof item === 'object') {\n          return safeString(\n            item.text ||\n            item.value ||\n            item.label ||\n            item.title ||\n            item.name ||\n            item.question ||\n            item.decision ||\n            item.risk ||\n            item.note,\n            ''\n          );\n        }\n        return String(item).trim();\n      })\n      .filter(Boolean);\n  }\n\n  if (typeof value === 'string') {\n    return value.trim() ? [value.trim()] : [];\n  }\n\n  if (value && typeof value === 'object') {\n    const extracted = safeString(\n      value.text ||\n      value.value ||\n      value.label ||\n      value.title ||\n      value.name ||\n      value.question ||\n      value.decision ||\n      value.risk ||\n      value.note,\n      ''\n    );\n    return extracted ? [extracted] : [];\n  }\n\n  return value == null ? [] : [String(value)];\n}\n\nfunction normalizeFaqItems(value) {\n  const items = Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];\n\n  return items.map((item) => {\n    if (!item || typeof item !== 'object') {\n      return {\n        question: 'Untitled question',\n        answer: ''\n      };\n    }\n\n    return {\n      question: safeString(item.question || item.q || item.title, 'Untitled question'),\n      answer: safeString(item.answer || item.a || item.response, '')\n    };\n  });\n}\n\nfunction normalizeActionItems(value) {\n  const items =\n    Array.isArray(value) ? value :\n    typeof value === 'string' ? [value] :\n    value && typeof value === 'object' ? [value] :\n    [];\n\n  return items.map((item) => {\n    if (typeof item === 'string') {\n      return {\n        task: item.trim() || 'not specified',\n        owner: null,\n        deadline: null,\n        notes: ''\n      };\n    }\n\n    if (!item || typeof item !== 'object') {\n      return {\n        task: 'not specified',\n        owner: null,\n        deadline: null,\n        notes: ''\n      };\n    }\n\n    return {\n      task: safeString(\n        item.task ||\n        item.action ||\n        item.title ||\n        item.name ||\n        item.label ||\n        item.description ||\n        item.notes,\n        'not specified'\n      ),\n      owner: safeString(item.owner, '') || null,\n      deadline: safeString(item.deadline, '') || null,\n      notes: safeString(item.notes || item.note || item.details || item.context, '')\n    };\n  });\n}\n\nfunction normalizeOpportunityItems(value) {\n  const items = Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];\n\n  return items.map((item) => {\n    if (!item || typeof item !== 'object') {\n      return {\n        title: 'Untitled opportunity',\n        impact: '',\n        effort: '',\n        notes: ''\n      };\n    }\n\n    return {\n      title: safeString(item.title || item.opportunity || item.name, 'Untitled opportunity'),\n      impact: safeString(item.impact),\n      effort: safeString(item.effort),\n      notes: safeString(item.notes || item.note || item.rationale)\n    };\n  });\n}\n\nlet cleaned = stripWrappers(raw);\ncleaned = extractOuterJsonObject(cleaned) || cleaned;\ncleaned = sanitizeJsonLike(cleaned);\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw,\n      cleaned_model_output: cleaned,\n      parse_error: error.message\n    }\n  }];\n}\n\nif (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {\n  return [{\n    json: {\n      ...meta,\n      parse_ok: false,\n      raw_model_output: raw,\n      cleaned_model_output: cleaned,\n      parse_error: 'Parsed output must be an object.'\n    }\n  }];\n}\n\nparsed.summary = asStringArray(parsed.summary);\nparsed.key_decisions = asStringArray(parsed.key_decisions);\nparsed.risks_open_questions = asStringArray(parsed.risks_open_questions);\nparsed.action_items = normalizeActionItems(parsed.action_items);\nparsed.employee_faq = normalizeFaqItems(parsed.employee_faq);\nparsed.ai_adoption_opportunities = normalizeOpportunityItems(parsed.ai_adoption_opportunities);\n\nif (!parsed.ai_ambassador_brief || Array.isArray(parsed.ai_ambassador_brief) || typeof parsed.ai_ambassador_brief !== 'object') {\n  const brief = typeof parsed.ai_ambassador_brief === 'string' ? parsed.ai_ambassador_brief.trim() : '';\n  parsed.ai_ambassador_brief = {\n    headline: brief ? brief.split(/\\r?\\n/)[0].slice(0, 160) : 'AI follow-up brief',\n    talking_points: brief ? [brief] : [],\n    suggested_internal_message: brief\n  };\n} else {\n  parsed.ai_ambassador_brief.headline = safeString(parsed.ai_ambassador_brief.headline, 'AI follow-up brief');\n  parsed.ai_ambassador_brief.talking_points = asStringArray(parsed.ai_ambassador_brief.talking_points);\n  parsed.ai_ambassador_brief.suggested_internal_message = safeString(parsed.ai_ambassador_brief.suggested_internal_message);\n}\n\nreturn [{\n  json: {\n    ...meta,\n    parse_ok: true,\n    followup: parsed,\n    raw_model_output: raw,\n    cleaned_model_output: cleaned,\n    parse_error: ''\n  }\n}];\n"
+      },
+      "id": "7d3b6cbe-43c5-4aea-8f7c-aa5106d6defe",
+      "name": "Parse Repaired JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5616,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ff816a15-468c-4986-8e36-9d87498ea22d",
+              "leftValue": "={{ $json.repair_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d8c229d0-e1e3-4826-b33d-b52800024c08",
+      "name": "IF Repair OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5776,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst isCzech = /czech|čeština|cestina|cz/i.test(String(item.language_hint || ''));\n\nconst labels = isCzech\n  ? {\n      department: 'Oddělení',\n      meetingType: 'Typ setkání',\n      audience: 'Cílová skupina',\n      notifyChannel: 'Notifikační kanál',\n      summary: '## Shrnutí',\n      topActions: '## Hlavní úkoly',\n      keyDecisions: '## Klíčová rozhodnutí',\n      risks: '## Rizika a otevřené otázky',\n      faq: '## FAQ',\n      owner: 'Vlastník',\n      deadline: 'Termín',\n      notSpecified: 'neuvedeno',\n      untitledAction: 'Úkol bez názvu',\n      noActions: '- Nebyly identifikovány žádné úkoly.',\n      noDecisions: '- Nebyla identifikována žádná klíčová rozhodnutí.',\n      noRisks: '- Nebyla identifikována žádná rizika ani otevřené otázky.',\n      noFaq: '- Nebyly identifikovány žádné FAQ položky.',\n      question: 'Otázka',\n      answer: 'Odpověď',\n      untitledQuestion: 'Otázka bez názvu',\n      noAnswer: 'Odpověď neuvedena.'\n    }\n  : {\n      department: 'Department',\n      meetingType: 'Meeting type',\n      audience: 'Audience',\n      notifyChannel: 'Notify channel',\n      summary: '## Summary',\n      topActions: '## Top Actions',\n      keyDecisions: '## Key Decisions',\n      risks: '## Risks and Open Questions',\n      faq: '## FAQ',\n      owner: 'Owner',\n      deadline: 'Deadline',\n      notSpecified: 'not specified',\n      untitledAction: 'Untitled action',\n      noActions: '- No action items identified.',\n      noDecisions: '- No key decisions identified.',\n      noRisks: '- No risks or open questions identified.',\n      noFaq: '- No FAQ items identified.',\n      question: 'Q',\n      answer: 'A',\n      untitledQuestion: 'Untitled question',\n      noAnswer: 'No answer provided.'\n    };\n\nconst f = item.followup;\n\nconst summaryLines = Array.isArray(f.summary) ? f.summary.filter(Boolean) : [];\nconst actionItems = Array.isArray(f.action_items) ? f.action_items : [];\nconst keyDecisions = Array.isArray(f.key_decisions) ? f.key_decisions : [];\nconst risks = Array.isArray(f.risks_open_questions) ? f.risks_open_questions : [];\nconst faq = Array.isArray(f.employee_faq) ? f.employee_faq : [];\n\nconst formatAction = (a) => {\n  const task = a?.task || a?.action || labels.untitledAction;\n  const owner = a?.owner ? `${labels.owner}: ${a.owner}` : `${labels.owner}: ${labels.notSpecified}`;\n  const deadline = a?.deadline ? `${labels.deadline}: ${a.deadline}` : `${labels.deadline}: ${labels.notSpecified}`;\n  return `- ${task}\\n  ${owner}\\n  ${deadline}`;\n};\n\nconst deliveryDraft = [\n  `# ${item.meeting_title}`,\n  '',\n  `${labels.department}: ${item.department}`,\n  `${labels.meetingType}: ${item.meeting_type}`,\n  item.audience ? `${labels.audience}: ${item.audience}` : null,\n  item.notify_channel ? `${labels.notifyChannel}: ${item.notify_channel}` : null,\n  '',\n  labels.summary,\n  ...summaryLines.map((line) => `- ${line}`),\n  '',\n  labels.topActions,\n  ...(actionItems.length ? actionItems.map(formatAction) : [labels.noActions]),\n  '',\n  labels.keyDecisions,\n  ...(keyDecisions.length ? keyDecisions.map((line) => `- ${line}`) : [labels.noDecisions]),\n  '',\n  labels.risks,\n  ...(risks.length ? risks.map((line) => `- ${line}`) : [labels.noRisks]),\n  '',\n  labels.faq,\n  ...(faq.length\n    ? faq.map((entry) => `- ${labels.question}: ${entry.question || labels.untitledQuestion}\\n  ${labels.answer}: ${entry.answer || labels.noAnswer}`)\n    : [labels.noFaq]),\n].filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    run_id: item.run_id,\n    submitted_at: item.submitted_at,\n    department: item.department || '',\n    meeting_title: item.meeting_title || '',\n    meeting_type: item.meeting_type || '',\n    language_hint: item.language_hint || '',\n    source_mode: item.source_mode,\n    status: 'draft',\n    reviewer_name: item.reviewer_name || '',\n    reviewer_notes: '',\n    prompt_version_followup: item.prompt_version_followup,\n    raw_transcript: item.manual_transcript || '',\n    summary: summaryLines.join('\\n'),\n    action_items_json: JSON.stringify(actionItems),\n    key_decisions_json: JSON.stringify(keyDecisions),\n    risks_open_questions_json: JSON.stringify(risks),\n    employee_faq_json: JSON.stringify(faq),\n    ai_opportunities_json: JSON.stringify(f.ai_adoption_opportunities || []),\n    ambassador_brief_json: JSON.stringify(f.ai_ambassador_brief || {}),\n    final_markdown_draft: deliveryDraft,\n    final_markdown_edited: '',\n    final_markdown_approved: '',\n    notify_channel: item.notify_channel || 'none',\n    error_message: ''\n  }\n}];\n"
+      },
+      "id": "41d9e52d-aa38-4d7c-9f00-e72e082cd1aa",
+      "name": "Prepare Repaired Draft Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5952,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nlet meta = {};\ntry {\n  meta = $('Render Follow-up Prompt').first().json;\n} catch (error) {}\n\ntry {\n  const parseMeta = $('Parse Follow-up JSON').first().json;\n  if (parseMeta?.run_id) {\n    meta = { ...meta, ...parseMeta };\n  }\n} catch (error) {}\n\nconst rawMessage =\n  item.parse_error ||\n  item.error_message ||\n  item.message ||\n  item.error?.message ||\n  item.errorMessage ||\n  'JSON repair failed.';\n\nconst error_message = String(rawMessage).slice(0, 500);\n\nreturn [{\n  json: {\n    run_id: meta.run_id || item.run_id || '',\n    submitted_at: meta.submitted_at || item.submitted_at || new Date().toISOString(),\n    department: meta.department || item.department || '',\n    meeting_title: meta.meeting_title || item.meeting_title || '',\n    meeting_type: meta.meeting_type || item.meeting_type || '',\n    language_hint: meta.language_hint || item.language_hint || '',\n    source_mode: meta.source_mode || item.source_mode || 'manual_transcript',\n    status: 'json_repair_failed',\n    reviewer_name: meta.reviewer_name || item.reviewer_name || '',\n    reviewer_notes: '',\n    prompt_version_followup: meta.prompt_version_followup || item.prompt_version_followup || 'followup_v1.0.0',\n    raw_transcript: meta.manual_transcript || item.manual_transcript || '',\n    summary: '',\n    action_items_json: '[]',\n    key_decisions_json: '[]',\n    risks_open_questions_json: '[]',\n    employee_faq_json: '[]',\n    ai_opportunities_json: '[]',\n    ambassador_brief_json: '{}',\n    final_markdown_draft: '',\n    final_markdown_edited: '',\n    final_markdown_approved: '',\n    notify_channel: meta.notify_channel || item.notify_channel || 'none',\n    error_message\n  }\n}];\n"
+      },
+      "id": "7f91accf-9021-4c6f-b61b-84f00d4bc05a",
+      "name": "Prepare Repair Failed Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5968,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorItem = $input.first().json;\nlet meta = {};\ntry { meta = $('Render Follow-up Prompt').first().json; } catch (error) {}\ntry { const repairMeta = $('Parse Follow-up JSON').first().json; if (repairMeta?.run_id) meta = { ...meta, ...repairMeta }; } catch (error) {}\nconst rawMessage = errorItem.message || errorItem.error?.message || errorItem.errorMessage || errorItem.description || 'MiniMax HTTP request failed.';\nconst error_message = String(rawMessage).slice(0, 500);\nreturn [{ json: { run_id: meta.run_id || errorItem.run_id || '', submitted_at: meta.submitted_at || errorItem.submitted_at || new Date().toISOString(), department: meta.department || errorItem.department || '', meeting_title: meta.meeting_title || errorItem.meeting_title || '', meeting_type: meta.meeting_type || errorItem.meeting_type || '', language_hint: meta.language_hint || errorItem.language_hint || '', source_mode: meta.source_mode || errorItem.source_mode || 'manual_transcript', status: 'minimax_failed', reviewer_name: meta.reviewer_name || errorItem.reviewer_name || '', reviewer_notes: '', prompt_version_followup: meta.prompt_version_followup || errorItem.prompt_version_followup || 'followup_v1.0.0', raw_transcript: meta.manual_transcript || errorItem.manual_transcript || '', summary: '', action_items_json: '[]', key_decisions_json: '[]', risks_open_questions_json: '[]', employee_faq_json: '[]', ai_opportunities_json: '[]', ambassador_brief_json: '{}', final_markdown_draft: '', final_markdown_edited: '', final_markdown_approved: '', notify_channel: meta.notify_channel || errorItem.notify_channel || 'none', error_message } }];"
+      },
+      "id": "ebea6793-521b-4519-901e-8ca4e0d17510",
+      "name": "Prepare MiniMax Failed Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5648,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_PLACEHOLDER",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "followup_runs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "run_id": "={{ $json.run_id }}",
+            "submitted_at": "={{ $json.submitted_at }}",
+            "department": "={{ $json.department }}",
+            "meeting_title": "={{ $json.meeting_title }}",
+            "meeting_type": "={{ $json.meeting_type }}",
+            "source_mode": "={{ $json.source_mode }}",
+            "status": "={{ $json.status }}",
+            "reviewer_name": "={{ $json.reviewer_name }}",
+            "reviewer_notes": "={{ $json.reviewer_notes }}",
+            "prompt_version_followup": "={{ $json.prompt_version_followup }}",
+            "raw_transcript": "={{ $json.raw_transcript }}",
+            "summary": "={{ $json.summary }}",
+            "action_items_json": "={{ $json.action_items_json }}",
+            "key_decisions_json": "={{ $json.key_decisions_json }}",
+            "risks_open_questions_json": "={{ $json.risks_open_questions_json }}",
+            "employee_faq_json": "={{ $json.employee_faq_json }}",
+            "ai_opportunities_json": "={{ $json.ai_opportunities_json }}",
+            "ambassador_brief_json": "={{ $json.ambassador_brief_json }}",
+            "final_markdown_draft": "={{ $json.final_markdown_draft }}",
+            "final_markdown_edited": "={{ $json.final_markdown_edited }}",
+            "final_markdown_approved": "={{ $json.final_markdown_approved }}",
+            "notify_channel": "={{ $json.notify_channel }}",
+            "error_message": "={{ $json.error_message }}",
+            "language_hint": "={{ $json.language_hint }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meeting_title",
+              "displayName": "meeting_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meeting_type",
+              "displayName": "meeting_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_mode",
+              "displayName": "source_mode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewer_name",
+              "displayName": "reviewer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewer_notes",
+              "displayName": "reviewer_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "prompt_version_followup",
+              "displayName": "prompt_version_followup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_transcript",
+              "displayName": "raw_transcript",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_items_json",
+              "displayName": "action_items_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "key_decisions_json",
+              "displayName": "key_decisions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "risks_open_questions_json",
+              "displayName": "risks_open_questions_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "employee_faq_json",
+              "displayName": "employee_faq_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_opportunities_json",
+              "displayName": "ai_opportunities_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ambassador_brief_json",
+              "displayName": "ambassador_brief_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_markdown_draft",
+              "displayName": "final_markdown_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_markdown_edited",
+              "displayName": "final_markdown_edited",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_markdown_approved",
+              "displayName": "final_markdown_approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notify_channel",
+              "displayName": "notify_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "language_hint",
+              "displayName": "language_hint",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f0b832ef-e803-4fee-95d7-5131e44f8b7a",
+      "name": "Google Sheets Append Row - Configure Credential",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        6272,
+        416
+      ],
+      "notesInFlow": true,
+      "notes": "Bind your Google Sheets credential, keep any service-account file outside the repo, and replace GOOGLE_SHEET_ID_PLACEHOLDER."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-followup/create-draft",
+        "responseMode": "lastNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "efbe7e32-956d-4187-abb0-c3c9ab4635fe",
+      "name": "Create Draft API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        3776,
+        368
+      ],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst rawDemo = source.demo_data_confirmed;\nconst out = {\n  meeting_title: String(source.meeting_title || '').trim(),\n  department: String(source.department || '').trim(),\n  meeting_type: String(source.meeting_type || '').trim(),\n  language_hint: String(source.language_hint || '').trim(),\n  audience: String(source.audience || '').trim(),\n  manual_transcript: String(source.manual_transcript || ''),\n  notify_channel: String(source.notify_channel || 'none').trim() || 'none',\n  reviewer_name: String(source.reviewer_name || '').trim(),\n};\nout.demo_data_confirmed = rawDemo === true || rawDemo === 1 || ['true', '1', 'yes', 'on', 'checked'].includes(String(rawDemo || '').toLowerCase());\nreturn [{ json: out }];"
+      },
+      "id": "3e564ca3-6fb0-4b85-81d8-12b2a6ee5aa0",
+      "name": "Normalize Intake Request",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        3968,
+        368
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = [\n  'Prepare Draft Sheet Row',\n  'Prepare Repaired Draft Row',\n  'Prepare Rejected Input Row',\n  'Prepare Repair Failed Row',\n  'Prepare MiniMax Failed Row',\n];\nlet base = {};\nfor (const nodeName of candidates) {\n  try {\n    const candidate = $(nodeName).first().json;\n    if (candidate && candidate.run_id) {\n      base = candidate;\n      break;\n    }\n  } catch {}\n}\nreturn [{\n  json: {\n    ok: Boolean(base.run_id),\n    run_id: base.run_id || '',\n    status: base.status || '',\n    meeting_title: base.meeting_title || '',\n    reviewer_name: base.reviewer_name || '',\n    notify_channel: base.notify_channel || 'none',\n    error_message: base.error_message || '',\n    message: base.run_id\n      ? 'Draft request processed. Refresh the review queue to continue.'\n      : 'Draft request reached Google Sheets, but no run_id was recovered for the response.',\n  }\n}];"
+      },
+      "id": "e4950273-0e66-46b0-a36c-1a69bf9ff436",
+      "name": "Build Create Draft Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        6432,
+        416
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.minimax.io/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <LLM_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.minimax_body }}",
+        "options": {
+          "timeout": 500000
+        }
+      },
+      "id": "e92b6795-845b-46fa-be5e-dc8a1e49fd31",
+      "name": "LLM Follow-up Generation HTTP - Configure API Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4912,
+        304
+      ],
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "notes": "Replace Authorization placeholder with n8n credential."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.minimax.io/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <LLM_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: 'MiniMax-M2.7',\n  messages: [\n    {\n      role: 'system',\n      content: 'Return valid JSON only.'\n    },\n    {\n      role: 'user',\n      content: 'Repair this model output into valid JSON matching the required follow-up schema. Do not add new facts. Do not rewrite the content unless needed for valid JSON. Return JSON only. Required JSON types: summary, key_decisions, and risks_open_questions are arrays of strings; action_items, employee_faq, and ai_adoption_opportunities are arrays of objects; ai_ambassador_brief is an object. For action_items, each item must use exactly this shape: {\"task\":\"...\",\"owner\":null or string,\"deadline\":null or string,\"notes\":\"\"}. Keep JSON property names in English even when text values are Czech. Raw output: ' + $json.raw_model_output\n    }\n  ],\n  temperature: 0.2\n} }}",
+        "options": {
+          "timeout": 500000
+        }
+      },
+      "id": "663a994f-58fa-4993-8130-98014a2c5a97",
+      "name": "LLM JSON Repair HTTP - Configure API Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5440,
+        384
+      ],
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "notes": "One repair attempt only. Do not add facts in the repair prompt."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Create Draft API": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Metadata": {
+      "main": [
+        [
+          {
+            "node": "Validate Demo Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Demo Input": {
+      "main": [
+        [
+          {
+            "node": "IF Input OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Input OK": {
+      "main": [
+        [
+          {
+            "node": "Render Follow-up Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Rejected Input Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Rejected Input Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Follow-up Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Follow-up Generation HTTP - Configure API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Follow-up JSON": {
+      "main": [
+        [
+          {
+            "node": "IF Parse OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Parse OK": {
+      "main": [
+        [
+          {
+            "node": "Prepare Draft Sheet Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM JSON Repair HTTP - Configure API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Draft Sheet Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Repaired JSON": {
+      "main": [
+        [
+          {
+            "node": "IF Repair OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Repair OK": {
+      "main": [
+        [
+          {
+            "node": "Prepare Repaired Draft Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Repair Failed Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Repaired Draft Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Repair Failed Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare MiniMax Failed Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Row - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Intake Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Append Row - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Build Create Draft Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Follow-up Generation HTTP - Configure API Key": {
+      "main": [
+        [
+          {
+            "node": "Parse Follow-up JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare MiniMax Failed Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM JSON Repair HTTP - Configure API Key": {
+      "main": [
+        [
+          {
+            "node": "Parse Repaired JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare MiniMax Failed Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "930b3f27-fb9b-4851-963f-3e096434b76b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "524ba018723ad5a0aecb73c8b6c971d2ca72ca1a97b2eccfb28bc8983a5b5295"
+  },
+  "tags": []
+}

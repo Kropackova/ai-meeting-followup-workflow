@@ -1,0 +1,51 @@
+{
+  "summary": [
+    "The fake training session tested an approval-gated AI workflow for meeting follow-up.",
+    "The MVP keeps Google Sheets as the review layer and sends a short Telegram summary only after approval."
+  ],
+  "action_items": [
+    {
+      "task": "Prepare a one-page reviewer checklist.",
+      "owner": "Sarah",
+      "deadline": "Friday",
+      "notes": "Include accuracy, privacy, and missing-owner checks."
+    },
+    {
+      "task": "Collect common employee questions from the next two demo sessions.",
+      "owner": "Ravi",
+      "deadline": null,
+      "notes": "Use the results to expand the FAQ section for future runs."
+    }
+  ],
+  "key_decisions": [
+    "Use Google Sheets as the MVP review layer.",
+    "Keep the portfolio workflow limited to fake/demo transcripts."
+  ],
+  "risks_open_questions": [
+    "Reviewers may treat AI output as approved if the human review step is not visible enough.",
+    "The long-term production review layer may need something stronger than Google Sheets."
+  ],
+  "employee_faq": [
+    {
+      "question": "Can real customer data be pasted into the transcript box?",
+      "answer": "No. The portfolio demo must use fake/demo data only."
+    }
+  ],
+  "ai_adoption_opportunities": [
+    {
+      "title": "Create a repeatable follow-up package after each training session.",
+      "impact": "high",
+      "effort": "medium",
+      "notes": "Reduces repeated manual drafting and creates a standard reviewer surface."
+    }
+  ],
+  "ai_ambassador_brief": {
+    "headline": "AI drafts the follow-up, but humans approve the message.",
+    "talking_points": [
+      "The workflow extracts structured review data from a transcript.",
+      "A reviewer can approve, edit, or reject the delivery draft.",
+      "Telegram runs only after explicit approval."
+    ],
+    "suggested_internal_message": "We tested a fake-data workflow that drafts follow-up content from transcripts, routes it through review, and sends a short internal summary only after approval."
+  }
+}

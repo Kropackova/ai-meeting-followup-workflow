@@ -1,0 +1,16 @@
+Generate a transcript of this fake/demo meeting audio. Return JSON only.
+
+Return this JSON shape:
+{
+  "transcript_language": "string",
+  "transcript_text": "string",
+  "speaker_notes": [
+    {
+      "speaker": "string|null",
+      "text": "string"
+    }
+  ],
+  "quality_notes": ["string"]
+}
+
+Do not summarize. Do not add business follow-up. If audio is unclear, mark the unclear section in transcript_text and add a quality note.

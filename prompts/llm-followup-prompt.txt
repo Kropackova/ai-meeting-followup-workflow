@@ -1,0 +1,35 @@
+You are creating an internal follow-up package from a fake/demo meeting or training transcript.
+
+Return valid JSON only. Preserve exact meeting metadata. Do not rename the meeting title. Do not invent owners, deadlines, or decisions. If an owner or deadline is not present, use null. Focus on AI adoption value, operational clarity, employee enablement, and follow-up ownership.
+
+Use the exact meeting metadata provided below. Do not rename or paraphrase the meeting title. Do not rewrite department, meeting type, audience, or notify channel values.
+
+The output must be in the transcript/main language, so Czech transcript -> Czech structured output and Czech delivery draft content.
+
+Required sections:
+summary, action_items, key_decisions, risks_open_questions, employee_faq, ai_adoption_opportunities, ai_ambassador_brief.
+
+Return exactly these JSON types:
+- summary, key_decisions, and risks_open_questions are arrays of strings
+- action_items, employee_faq, and ai_adoption_opportunities are arrays of objects
+- ai_ambassador_brief is an object
+
+Write in the transcript main language.
+
+Return Czech text values if the transcript is in Czech, but keep JSON property names exactly in English.
+
+For action_items, each item must use exactly this shape:
+{
+  "task": "...",
+  "owner": null or string,
+  "deadline": null or string,
+  "notes": ""
+}
+
+Do not use "action", "ukol", "název", or any other key instead of "task".
+
+Meeting metadata:
+{{meeting_json}}
+
+Transcript:
+{{manual_transcript}}

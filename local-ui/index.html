@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Follow-up Local Reviewer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="hero-copy">
+        <p class="eyebrow">Local Reviewer UI</p>
+        <div class="hero-title-wrap" aria-label="Meeting Follow-up Control Panel">
+          <div class="hero-title-grid">
+            <span>Meeting</span>
+            <span>Follow-up</span>
+            <span>Control</span>
+            <span>Panel</span>
+          </div>
+        </div>
+        <p class="subtitle">Submit transcript, review draft, then approve or reject without touching raw Sheets or run IDs.</p>
+      </div>
+      <div class="connection-card">
+        <label class="field-label" for="baseUrl">n8n Base URL</label>
+        <div class="connection-row">
+          <input id="baseUrl" type="text" placeholder="http://localhost:5678" spellcheck="false">
+          <button id="saveBaseUrlBtn" class="secondary-btn" type="button">Save</button>
+        </div>
+        <p class="hint">Use the root n8n URL. This app calls the production webhook endpoints under <code>/webhook/meeting-followup/...</code>.</p>
+        <div id="connectionStatus" class="inline-status neutral">Waiting for configuration</div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Primary navigation">
+      <button id="tabSubmit" class="tab is-active" type="button">Submit Transcript</button>
+      <button id="tabAudio" class="tab" type="button">Audio Intake</button>
+      <button id="tabReview" class="tab" type="button">Review Queue</button>
+    </nav>
+
+    <main>
+      <section id="submitView" class="view is-active">
+        <div class="panel submit-panel">
+          <div class="panel-head">
+            <div>
+              <h2>New Draft Request</h2>
+              <p>Fake/demo transcripts only. This page sends directly to your local n8n draft webhook.</p>
+            </div>
+            <div id="submitStatus" class="inline-status neutral">Idle</div>
+          </div>
+
+          <form id="submitForm" class="form-grid">
+            <label>
+              <span>Meeting title</span>
+              <input name="meeting_title" type="text" required>
+            </label>
+            <label>
+              <span>Department</span>
+              <input name="department" type="text" required>
+            </label>
+            <label>
+              <span>Meeting type</span>
+              <input name="meeting_type" type="text" required>
+            </label>
+            <label>
+              <span>Language hint</span>
+              <input name="language_hint" type="text" placeholder="English / Czech / ...">
+            </label>
+            <label>
+              <span>Audience</span>
+              <input name="audience" type="text" placeholder="Team leads, coordinators, editors...">
+            </label>
+            <label>
+              <span>Notify channel</span>
+              <select name="notify_channel">
+                <option value="telegram">telegram</option>
+                <option value="none">none</option>
+                <option value="email">email</option>
+              </select>
+            </label>
+            <label>
+              <span>Reviewer name</span>
+              <input name="reviewer_name" type="text" required>
+            </label>
+            <label class="checkbox-row">
+              <input name="demo_data_confirmed" type="checkbox" checked required>
+              <span>I confirm this uses fake/demo data only.</span>
+            </label>
+            <label class="full-width">
+              <span>Manual transcript</span>
+              <textarea name="manual_transcript" rows="18" required></textarea>
+            </label>
+            <div class="form-actions full-width">
+              <button class="primary-btn" type="submit">Create Draft</button>
+              <button id="submitResetBtn" class="secondary-btn" type="reset">Clear</button>
+            </div>
+          </form>
+
+          <div class="response-box">
+            <h3>Last Draft API Response</h3>
+            <pre id="submitResponse">No request sent yet.</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="audioView" class="view">
+        <div class="panel submit-panel">
+          <div class="panel-head">
+            <div>
+              <h2>New Audio Request</h2>
+              <p>Fake/demo recordings only. The audio workflow transcribes the file and passes it into the same draft process.</p>
+            </div>
+            <div id="audioStatus" class="inline-status neutral">Idle</div>
+          </div>
+
+          <form id="audioForm" class="form-grid">
+            <label>
+              <span>Meeting title</span>
+              <input name="meeting_title" type="text" required>
+            </label>
+            <label>
+              <span>Department</span>
+              <input name="department" type="text" required>
+            </label>
+            <label>
+              <span>Meeting type</span>
+              <input name="meeting_type" type="text" required>
+            </label>
+            <label>
+              <span>Language hint</span>
+              <input name="language_hint" type="text" placeholder="English / Czech / ...">
+            </label>
+            <label>
+              <span>Audience</span>
+              <input name="audience" type="text" placeholder="Team leads, coordinators, editors...">
+            </label>
+            <label>
+              <span>Notify channel</span>
+              <select name="notify_channel">
+                <option value="telegram">telegram</option>
+                <option value="none">none</option>
+                <option value="email">email</option>
+              </select>
+            </label>
+            <label>
+              <span>Reviewer name</span>
+              <input name="reviewer_name" type="text" required>
+            </label>
+            <label>
+              <span>Audio file</span>
+              <input name="audio_file" type="file" accept=".m4a,.mp3,.wav,audio/mp4,audio/m4a,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav" required>
+            </label>
+            <label class="checkbox-row">
+              <input name="demo_data_confirmed" type="checkbox" checked required>
+              <span>I confirm this uses fake/demo audio only.</span>
+            </label>
+            <div class="audio-note full-width">
+              Tested with M4A. MP3/WAV remain recommended for broader compatibility. Workflow 10 passes the result into workflow 11.
+            </div>
+            <div class="form-actions full-width">
+              <button class="primary-btn" type="submit">Transcribe audio and create draft</button>
+              <button id="audioResetBtn" class="secondary-btn" type="reset">Clear</button>
+            </div>
+          </form>
+
+          <div class="response-box">
+            <h3>Last Audio API Response</h3>
+            <pre id="audioResponse">No audio request sent yet.</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="reviewView" class="view">
+        <div class="review-layout">
+          <aside class="panel queue-panel">
+            <div class="panel-head compact">
+              <div>
+                <h2>Review Queue</h2>
+                <p>Loaded from the review-items webhook.</p>
+              </div>
+              <div id="queueStatus" class="inline-status neutral">Idle</div>
+            </div>
+            <div class="queue-toolbar">
+              <label>
+                <span>Status filter</span>
+                <select id="queueFilter">
+                  <option value="draft">draft</option>
+                  <option value="approved">approved</option>
+                  <option value="approved_edited">approved_edited</option>
+                  <option value="rejected">rejected</option>
+                  <option value="minimax_failed">minimax_failed</option>
+                  <option value="json_repair_failed">json_repair_failed</option>
+                  <option value="rejected_input">rejected_input</option>
+                  <option value="">all supported statuses</option>
+                </select>
+              </label>
+              <button id="refreshQueueBtn" class="secondary-btn" type="button">Refresh</button>
+            </div>
+            <div id="queueList" class="queue-list"></div>
+          </aside>
+
+          <section class="panel detail-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Review Detail</h2>
+                <p>Open one row, inspect the draft, then decide.</p>
+              </div>
+              <div id="detailStatus" class="inline-status neutral">No row selected</div>
+            </div>
+
+            <div id="detailEmpty" class="empty-state">
+              Select an item from the queue to load its summary, action items, risks, and editable markdown.
+            </div>
+
+            <div id="detailContent" class="detail-content" hidden>
+              <div class="overview-grid">
+                <div><span class="meta-label">Title</span><strong id="detailTitle"></strong></div>
+                <div><span class="meta-label">Department</span><strong id="detailDepartment"></strong></div>
+                <div><span class="meta-label">Status</span><strong id="detailStatusValue"></strong></div>
+                <div><span class="meta-label">Reviewer</span><strong id="detailReviewer"></strong></div>
+                <div><span class="meta-label">Submitted</span><strong id="detailSubmitted"></strong></div>
+                <div><span class="meta-label">Notify channel</span><strong id="detailNotifyChannel"></strong></div>
+              </div>
+
+              <div class="detail-sections">
+                <section class="content-card">
+                  <h3>Summary</h3>
+                  <ul id="summaryList" class="bullet-list"></ul>
+                </section>
+                <section class="content-card">
+                  <h3>Top Actions</h3>
+                  <ul id="actionsList" class="bullet-list"></ul>
+                </section>
+                <section class="content-card">
+                  <h3>Key Decisions</h3>
+                  <ul id="decisionsList" class="bullet-list"></ul>
+                </section>
+                <section class="content-card">
+                  <h3>Risks and Open Questions</h3>
+                  <ul id="risksList" class="bullet-list"></ul>
+                </section>
+              </div>
+
+              <div class="markdown-grid">
+                <section class="content-card">
+                  <div class="section-head">
+                    <h3>Delivery Draft</h3>
+                    <button id="copyDraftToEditedBtn" class="ghost-btn" type="button">Copy draft for editing</button>
+                  </div>
+                  <p class="section-note">The generated delivery draft built from the reviewed structured output.</p>
+                  <pre id="draftPreview" class="markdown-preview"></pre>
+                </section>
+                <section class="content-card">
+                  <h3>Edited Delivery</h3>
+                  <p class="section-note">Make changes here for Approve with edits.</p>
+                  <textarea id="editedMarkdown" rows="22"></textarea>
+                </section>
+              </div>
+
+              <div class="review-notes-block">
+                <label>
+                  <span>Reviewer notes</span>
+                  <textarea id="reviewerNotes" rows="4" placeholder="Optional review rationale, rejection note, or edit summary."></textarea>
+                </label>
+              </div>
+
+              <div class="action-row">
+                <button id="approveBtn" class="primary-btn" type="button">Approve</button>
+                <button id="approveEditedBtn" class="secondary-btn" type="button">Approve with edits</button>
+                <button id="rejectBtn" class="danger-btn" type="button">Reject</button>
+              </div>
+
+              <div class="response-box">
+                <h3>Last Review Action Response</h3>
+                <pre id="reviewResponse">No action sent yet.</pre>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="actionToast" class="action-toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
